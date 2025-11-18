@@ -23,7 +23,6 @@ from sqlalchemy import (
     String,
     Text,
     Index,
-    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -38,9 +37,8 @@ class File(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Identity / path
-    # Use bounded VARCHAR so MySQL can index these without prefix-length hacks.
-    path: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
-    dir: Mapped[str] = mapped_column(String(1024), nullable=False)
+    path: Mapped[str] = mapped_column(Text, nullable=False)
+    dir: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     ext: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
@@ -77,9 +75,12 @@ class File(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("path", name="uq_files_path"),
+        # Unique index on first 512 chars of path
+        Index("uq_files_path", "path", mysql_length=512, unique=True),
+        # Hash index is small, no prefix needed
         Index("ix_files_hash", "hash"),
-        Index("ix_files_dir", "dir"),
+        # Index on first 255 chars of dir for directory queries
+        Index("ix_files_dir", "dir", mysql_length=255),
     )
 
     @classmethod

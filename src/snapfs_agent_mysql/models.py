@@ -37,9 +37,11 @@ class File(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    path: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
-    dir: Mapped[str] = mapped_column(Text, nullable=False)
-    name: Mapped[str] = mapped_column(Text, nullable=False)
+    # Identity / path
+    # Use bounded VARCHAR so MySQL can index these without prefix-length hacks.
+    path: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
+    dir: Mapped[str] = mapped_column(String(1024), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
     ext: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
 

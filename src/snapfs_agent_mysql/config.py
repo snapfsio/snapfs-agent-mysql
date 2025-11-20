@@ -30,7 +30,7 @@ class Settings(BaseModel):
     # Async SQLAlchemy URL using aiomysql driver
     mysql_url: str = os.getenv(
         "MYSQL_URL",
-        "mysql+aiomysql://snapfs:snapfs@mysql:3306/snapfs",
+        "mysql+aiomysql://snapfs:snapfs@localhost:3306/snapfs",
     )
 
 

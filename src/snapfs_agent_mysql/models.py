@@ -46,9 +46,9 @@ class File(Base):
     size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     fsize_du: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
 
-    mtime: Mapped[float] = mapped_column(Float, nullable=False)
-    atime: Mapped[float] = mapped_column(Float, nullable=True)
-    ctime: Mapped[float] = mapped_column(Float, nullable=True)
+    mtime: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    atime: Mapped[int] = mapped_column(BigInteger, nullable=True)
+    ctime: Mapped[int] = mapped_column(BigInteger, nullable=True)
 
     nlinks: Mapped[int] = mapped_column(Integer, nullable=True)
     inode: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)

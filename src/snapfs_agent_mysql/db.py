@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -39,10 +40,30 @@ SessionLocal = async_sessionmaker(
 
 async def init_db(Base) -> None:
     """
-    Create tables if they don't exist yet.
-
-    In a more mature setup you'd do this with Alembic migrations instead
-    of create_all, but this is fine for initial agent bootstrapping.
+    Create tables and views if they don't exist yet.
+    In production you'd move this to Alembic, but this is fine for bootstrapping.
     """
     async with engine.begin() as conn:
+        # Create concrete tables
         await conn.run_sync(Base.metadata.create_all)
+
+        # Create file_cache view for gateway lookups
+        await conn.execute(
+            text(
+                """
+                CREATE OR REPLACE VIEW file_cache AS
+                SELECT
+                    p.full_path AS path,
+                    c.algo,
+                    c.hash,
+                    c.size AS size_bytes,
+                    f.mtime,
+                    f.dev AS device_id,
+                    f.inode
+                FROM paths p
+                JOIN files f   ON p.file_id    = f.id
+                JOIN content c ON f.content_id = c.id
+                WHERE p.is_deleted = 0;
+            """
+            )
+        )

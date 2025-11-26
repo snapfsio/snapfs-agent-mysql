@@ -22,20 +22,57 @@ from .models import Content, File, PathEntry, Snapshot, SnapshotFile
 
 
 def _split_path(path: str) -> tuple[str, str]:
-    """Split a full path into (dir, name)."""
-    import os
+    """
+    Split a full path into (dir, name) using both / and \\ as separators.
 
-    dir_, name = os.path.split(path)
+    Assumptions:
+    - `path` is a SnapFS-style path (ideally already normalized to /),
+      but we defensively handle Windows-style paths too.
+    """
+    if not path:
+        return "/", ""
+
+    # Treat backslashes as separators too, then split on /
+    norm = path.replace("\\", "/")
+
+    if "/" not in norm:
+        # No directory component; treat everything as the name
+        return "/", norm
+
+    dir_, name = norm.rsplit("/", 1)
+
     if not dir_:
         dir_ = "/"
+
     return dir_, name or ""
 
 
 def _split_ext(name: str) -> Optional[str]:
-    """Split a filename into its extension, if any."""
-    if "." in name:
-        return name.rsplit(".", 1)[-1]
-    return None
+    """
+    Return the file extension (sans dot) from a filename, or None.
+
+    Rules:
+    - Only looks at the *basename* (last path segment).
+    - Leading dotfiles like '.gitignore' are treated as having no extension.
+    - Names ending with a dot ('foo.') are treated as no extension.
+    - Uses the last dot as the extension separator (foo.tar.gz -> 'gz').
+    """
+    if not name:
+        return None
+
+    # Make sure we only deal with the last path segment, defensively
+    basename = name.replace("\\", "/").split("/")[-1]
+
+    # Pure dotfile ('.git', '.gitignore') → no extension
+    if basename.startswith(".") and basename.count(".") == 1:
+        return None
+
+    idx = basename.rfind(".")
+    # No dot, leading dot, or trailing dot -> no extension
+    if idx <= 0 or idx == len(basename) - 1:
+        return None
+
+    return basename[idx + 1 :]
 
 
 def _get_or_create_content(

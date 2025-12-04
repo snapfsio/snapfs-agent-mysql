@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import traceback
 from typing import Any, Dict, Iterable
 
 from .db import SessionLocal
@@ -30,6 +31,8 @@ async def apply_events(events: Iterable[Dict[str, Any]]) -> None:
 
     For now we only handle file.upsert; other event types are ignored.
     """
+    events = list(events)
+    print(f"[agent-mysql] applying {len(events)} events in DB transaction")
     async with SessionLocal() as session:
         async with session.begin():
             for ev in events:
@@ -39,13 +42,19 @@ async def apply_events(events: Iterable[Dict[str, Any]]) -> None:
                 data = ev.get("data") or {}
                 path = data.get("path")
                 if not path:
-                    # no point ingesting without a path
+                    print("[agent-mysql] skipping file.upsert event with no path")
                     continue
 
                 # Delegate to the synchronous ingest logic using run_sync.
                 # run_sync will provide a sync Session bound to the same connection.
                 def _sync_ingest(sync_session):
-                    ingest_file_event(sync_session, data)
+                    try:
+                        ingest_file_event(sync_session, data)
+                    except Exception as e:
+                        print(
+                            f"[agent-mysql] error ingesting file event for path {path}: {e}"
+                        )
+                        traceback.print_exc()
 
                 await session.run_sync(_sync_ingest)
 

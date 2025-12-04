@@ -42,14 +42,31 @@ async def ws_loop() -> None:
             async with aiohttp.ClientSession() as sess:
                 async with sess.ws_connect(uri) as ws:
                     print(f"[agent-mysql] connected {uri}")
+                    payload: Dict[str, Any] = {}
+                    msg_type: str = ""
                     backoff = 1
 
                     async for msg in ws:
-                        if msg.type != aiohttp.WSMsgType.TEXT:
+                        if msg.type == aiohttp.WSMsgType.TEXT:
+                            payload = msg.json()
+                            msg_type = payload.get("type")
+                        elif msg.type == aiohttp.WSMsgType.CLOSE:
+                            print("[agent-mysql] WS CLOSE from server")
+                            break
+                        elif msg.type in (
+                            aiohttp.WSMsgType.CLOSING,
+                            aiohttp.WSMsgType.CLOSED,
+                        ):
+                            print(
+                                f"[agent-mysql] WS is closing/closed (type={msg.type})"
+                            )
+                            break
+                        elif msg.type == aiohttp.WSMsgType.ERROR:
+                            print("[agent-mysql] WS ERROR:", repr(ws.exception()))
+                            break
+                        else:
+                            print(f"[agent-mysql] unhandled WS msg type {msg.type}")
                             continue
-
-                        payload = msg.json()
-                        msg_type = payload.get("type")
 
                         if msg_type == "events":
                             batch_id = payload["batch"]
@@ -63,15 +80,38 @@ async def ws_loop() -> None:
 
                             if all_events:
                                 try:
-                                    await apply_events(all_events)
+                                    # process in smaller DB transactions
+                                    for i in range(
+                                        0, len(all_events), settings.chunk_size
+                                    ):
+                                        chunk = all_events[i : i + settings.chunk_size]
+                                        print(
+                                            f"[agent-mysql] applying chunk {i//settings.chunk_size + 1} "
+                                            f"of batch {batch_id}: {len(chunk)} events"
+                                        )
+                                        await apply_events(chunk)
+
+                                    print(
+                                        f"[agent-mysql] apply_events OK for batch {batch_id} "
+                                        f"({len(all_events)} events in chunks of {settings.chunk_size})"
+                                    )
                                 except Exception as e:
-                                    print(f"[agent-mysql] apply_events error: {e}")
+                                    print(
+                                        f"[agent-mysql] apply_events error for batch {batch_id}: {e}"
+                                    )
                                     traceback.print_exc()
                                     # Do NOT ack the batch; let JetStream redeliver
                                     break
 
-                            # ACK the batch back to gateway only if apply_events succeeded
-                            await ws.send_json({"type": "ack", "batch": batch_id})
+                            # Only ACK after *all* chunks in this WS batch succeeded
+                            try:
+                                await ws.send_json({"type": "ack", "batch": batch_id})
+                                print(f"[agent-mysql] ACK sent for batch {batch_id}")
+                            except aiohttp.ClientConnectionError as e:
+                                print(
+                                    f"[agent-mysql] failed to send ACK for batch {batch_id}: {e}"
+                                )
+                                raise
 
                         elif msg_type == "error":
                             # Error from gateway (e.g. JetStream problems)

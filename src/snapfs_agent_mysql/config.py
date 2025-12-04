@@ -25,7 +25,8 @@ class Settings(BaseModel):
     # Event stream config
     subject: str = os.getenv("SNAPFS_SUBJECT", "snapfs.files")
     durable: str = os.getenv("SNAPFS_DURABLE", "mysql")
-    batch: int = int(os.getenv("SNAPFS_BATCH", "100"))
+    batch: int = int(os.getenv("SNAPFS_BATCH", "5"))
+    chunk_size: int = int(os.getenv("SNAPFS_CHUNK_SIZE", "200"))
 
     # Async SQLAlchemy URL using aiomysql driver
     mysql_url: str = os.getenv(

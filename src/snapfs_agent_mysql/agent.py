@@ -15,7 +15,8 @@
 # limitations under the License.
 
 import asyncio
-import socket
+import traceback
+from typing import Any, Dict, List
 
 import aiohttp
 
@@ -23,7 +24,7 @@ from .config import settings
 from .events import apply_events
 
 
-async def ws_loop():
+async def ws_loop() -> None:
     uri = (
         f"{settings.gateway_ws}/stream"
         f"?subject={settings.subject}"
@@ -31,17 +32,14 @@ async def ws_loop():
         f"&batch={settings.batch}"
     )
 
-    connector = aiohttp.TCPConnector(
-        limit=0,
-        family=socket.AF_INET,  # force IPv4 in typical docker setups
-    )
-
     backoff = 1
 
     while True:
         try:
             print(f"[agent-mysql] connecting {uri}")
-            async with aiohttp.ClientSession(connector=connector) as sess:
+
+            # Fresh session per connection attempt
+            async with aiohttp.ClientSession() as sess:
                 async with sess.ws_connect(uri) as ws:
                     print(f"[agent-mysql] connected {uri}")
                     backoff = 1
@@ -51,26 +49,45 @@ async def ws_loop():
                             continue
 
                         payload = msg.json()
-                        if payload.get("type") != "events":
-                            # could also handle "error" messages here
+                        msg_type = payload.get("type")
+
+                        if msg_type == "events":
+                            batch_id = payload["batch"]
+                            messages: List[Dict[str, Any]] = payload["messages"]
+
+                            all_events: List[Dict[str, Any]] = []
+                            for m in messages:
+                                data = m.get("data") or {}
+                                evs = data.get("events") or []
+                                all_events.extend(evs)
+
+                            if all_events:
+                                try:
+                                    await apply_events(all_events)
+                                except Exception as e:
+                                    print(f"[agent-mysql] apply_events error: {e}")
+                                    traceback.print_exc()
+                                    # Do NOT ack the batch; let JetStream redeliver
+                                    break
+
+                            # ACK the batch back to gateway only if apply_events succeeded
+                            await ws.send_json({"type": "ack", "batch": batch_id})
+
+                        elif msg_type == "error":
+                            # Error from gateway (e.g. JetStream problems)
+                            print(
+                                f"[agent-mysql] gateway error: {payload.get('message')}"
+                            )
+                            break
+
+                        else:
+                            # Unknown message type; ignore for now
                             continue
 
-                        batch_id = payload["batch"]
-                        messages = payload["messages"]
-
-                        all_events = []
-                        for m in messages:
-                            data = m.get("data") or {}
-                            evs = data.get("events") or []
-                            all_events.extend(evs)
-
-                        if all_events:
-                            await apply_events(all_events)
-
-                        # ACK the batch back to gateway
-                        await ws.send_json({"type": "ack", "batch": batch_id})
+            print("[agent-mysql] websocket closed; will reconnect")
 
         except Exception as e:
             print(f"[agent-mysql] WS loop error: {e}; retrying in {backoff}s")
+            traceback.print_exc()
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30)

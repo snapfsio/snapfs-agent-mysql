@@ -56,10 +56,10 @@ async def init_db(Base) -> None:
                     p.full_path AS path,
                     c.algo,
                     c.hash,
-                    c.size AS size_bytes,
-                    f.mtime,
-                    f.dev AS device_id,
-                    f.inode
+                    c.size AS size,
+                    f.mtime AS mtime,
+                    f.dev AS dev,
+                    f.inode AS inode
                 FROM paths p
                 JOIN files f   ON p.file_id    = f.id
                 JOIN content c ON f.content_id = c.id
